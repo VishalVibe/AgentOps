@@ -1,0 +1,58 @@
+<div class="dashboard-container">
+  <header>
+    <h1>AgentOps Review Dashboard</h1>
+  </header>
+
+  <main>
+    <div class="sidebar">
+      <h2>Review Queue</h2>
+      <ul class="queue-list">
+        @if (queue.length > 0) {
+          @for (task of queue; track task.task_id) {
+            <li (click)="selectTask(task)" [class.selected]="selectedTask?.task_id === task.task_id">
+              <strong>{{ task.original_task | slice:0:30 }}...</strong>
+              <span class="badge">Escalated</span>
+            </li>
+          }
+        } @else {
+          <p class="empty-msg">No tasks in queue.</p>
+        }
+      </ul>
+    </div>
+
+    @if (selectedTask) {
+      <div class="content">
+        <h2>Task Review</h2>
+        <div class="task-details">
+          <p><strong>Original Task:</strong> {{ selectedTask.original_task }}</p>
+          
+          <h3>Execution Plan</h3>
+          <ul class="plan-list">
+            @for (st of selectedTask.plan.subtasks; track st.id) {
+              <li [class.active]="st.id === selectedTask.current_subtask_id">
+                <span class="status-indicator" [attr.data-status]="st.status"></span>
+                <strong>{{ st.description }}</strong> ({{ st.assigned_specialist }})
+                @if (st.id === selectedTask.current_subtask_id) {
+                  <div class="current-subtask-highlight">
+                    <p><em>This step requires review.</em></p>
+                    <textarea [(ngModel)]="modifiedResult" rows="5"></textarea>
+                  </div>
+                }
+              </li>
+            }
+          </ul>
+
+          <div class="actions">
+            <button class="btn btn-success" (click)="resolve('approve')">Approve Action</button>
+            <button class="btn btn-warning" (click)="resolve('modify')">Modify & Approve</button>
+            <button class="btn btn-danger" (click)="resolve('take_over')">Take Over</button>
+          </div>
+        </div>
+      </div>
+    } @else {
+      <div class="content placeholder">
+        <p>Select a task from the queue to review.</p>
+      </div>
+    }
+  </main>
+</div>

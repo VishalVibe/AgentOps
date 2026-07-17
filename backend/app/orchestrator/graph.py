@@ -14,7 +14,7 @@ def route_from_supervisor(state: AgentState) -> str:
 def route_from_specialist(state: AgentState) -> str:
     # If escalated or failed, maybe we stop or go to a human node (Phase 3)
     if state.get("escalate_to_human"):
-        return END # We'll handle this in Phase 3
+        return "human"
     return "reviewer"
 
 def route_from_reviewer(state: AgentState) -> str:
@@ -36,6 +36,11 @@ def route_from_reviewer(state: AgentState) -> str:
             
     return END
 
+def human_node(state: AgentState) -> dict:
+    # This node just acts as a placeholder where execution stops for human review.
+    # In a full LangGraph Checkpointer setup, we'd interrupt here.
+    return {"sender": "human"}
+
 # Build Graph
 builder = StateGraph(AgentState)
 
@@ -45,6 +50,7 @@ builder.add_node("data", data_node)
 builder.add_node("writing", writing_node)
 builder.add_node("execution", execution_node)
 builder.add_node("reviewer", reviewer_node)
+builder.add_node("human", human_node)
 
 builder.set_entry_point("supervisor")
 
@@ -61,8 +67,12 @@ builder.add_conditional_edges("supervisor", route_from_supervisor, {
 for node in ["research", "data", "writing", "execution"]:
     builder.add_conditional_edges(node, route_from_specialist, {
         "reviewer": "reviewer",
+        "human": "human",
         END: END
     })
+
+# From human, we go to end (the API will resume by re-invoking with new state)
+builder.add_edge("human", END)
 
 # Edges from reviewer back to specialists or END
 builder.add_conditional_edges("reviewer", route_from_reviewer, {

@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from app.orchestrator.graph import graph
 from app.memory.manager import MemoryManager
 import uuid
+import json
 
 load_dotenv()
 
@@ -67,6 +68,55 @@ def delete_memory():
         manager.vector_store.delete_collection()
     return {"status": "success", "message": "Memory cleared"}
     
+@app.get("/api/queue")
+def get_review_queue():
+    # Fetch all tasks from redis working memory that are escalated
+    manager = MemoryManager(task_id="default")
+    if not manager.redis_client:
+        return {"queue": []}
+        
+    keys = manager.redis_client.keys("task:*:state")
+    queue = []
+    for key in keys:
+        data = manager.redis_client.get(key)
+        if data:
+            state = json.loads(data)
+            if state.get("escalate_to_human"):
+                queue.append({
+                    "task_id": state.get("current_task_id"),
+                    "original_task": state.get("original_task"),
+                    "plan": state.get("plan"),
+                    "current_subtask_id": state.get("current_subtask_id")
+                })
+    return {"queue": queue}
+
+class ResolveRequest(BaseModel):
+    action: str # "approve", "modify", "take_over"
+    modified_result: str = ""
+
+@app.post("/api/queue/{task_id}/resolve")
+def resolve_escalation(task_id: str, req: ResolveRequest):
+    manager = MemoryManager(task_id=task_id)
+    state = manager.get_working_memory()
+    if not state:
+        raise HTTPException(status_code=404, detail="Task not found")
+        
+    state["escalate_to_human"] = False
+    
+    current_subtask_id = state.get("current_subtask_id")
+    if req.action == "take_over" or req.action == "modify":
+        for i, st in enumerate(state["plan"]["subtasks"]):
+            if st["id"] == current_subtask_id:
+                state["plan"]["subtasks"][i]["result"] = req.modified_result
+                state["plan"]["subtasks"][i]["status"] = "completed"
+                
+    # Resume graph execution
+    # In a real app we would use Checkpointer or async worker, here we just invoke again
+    result = graph.invoke(state)
+    manager.save_working_memory(result)
+    
+    return {"status": "success", "message": "Task resumed"}
+
 @app.get("/api/health")
 def health_check():
     return {"status": "healthy"}

@@ -3,6 +3,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 from typing import List
 from app.orchestrator.state import AgentState, Plan, SubTask
+from app.memory.manager import MemoryManager
 import uuid
 import os
 
@@ -22,10 +23,16 @@ def get_llm():
 def supervisor_node(state: AgentState) -> dict:
     llm = get_llm()
     
+    # Retrieve past memories for planning
+    memory_manager = MemoryManager(task_id=state.get("current_task_id", "default"))
+    past_memories = memory_manager.query_long_term_memory(state["original_task"])
+    memory_context = "\n".join(past_memories) if past_memories else "No relevant past memories found."
+    
     system_prompt = (
         "You are the Supervisor Agent. Your job is to decompose a complex task into an ordered list of subtasks. "
         "Assign each subtask to a specialist agent (research, data, writing, execution). "
-        "Each subtask should clearly state its dependencies."
+        "Each subtask should clearly state its dependencies.\n\n"
+        f"Relevant Past Execution Memories:\n{memory_context}"
     )
     
     prompt = ChatPromptTemplate.from_messages([
